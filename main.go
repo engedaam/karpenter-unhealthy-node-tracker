@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"encoding/csv"
+	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"sync"
@@ -38,7 +40,39 @@ func main() {
 	config.Burst = 5000
 	mgr := lo.Must(controllerruntime.NewManager(config, controllerruntime.Options{}))
 
-	writer := csv.NewWriter(os.Stdout)
+	// Define flags
+	outputFile := flag.String("o", "", "Output CSV file")
+	overwrite := flag.Bool("f", false, "Force overwrite if file exists")
+	flag.Parse()
+
+	// Check if file exists
+	_, err := os.Stat(lo.FromPtr(outputFile))
+	fileExists := !os.IsNotExist(err)
+
+	if fileExists && !lo.FromPtr(overwrite) && lo.FromPtr(outputFile) != "" {
+		log.Fatalf("file %s already exists. Use -f flag to force overwrite\n", lo.FromPtr(outputFile))
+	}
+
+	file := &os.File{}
+	var multiWriter io.Writer
+	if lo.FromPtr(outputFile) != "" {
+		file, err = os.Create(lo.FromPtr(outputFile))
+		if err != nil {
+			log.Fatalf("failed creating output file %s, %s\n", lo.FromPtr(outputFile), err)
+			return
+		}
+		multiWriter = io.MultiWriter(
+			file,      // Write to file
+			os.Stdout, // Write to standard output
+		)
+	} else {
+		multiWriter = io.MultiWriter(
+			os.Stdout, // Write to standard output
+		)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(multiWriter)
 	writer.WriteAll([][]string{{"Event Type", "Node", "Duration (ms)"}})
 
 	unhealthyNodeTime := &sync.Map{}
@@ -97,6 +131,7 @@ func (c *nodeWatcher) Reconcile(ctx context.Context, request reconcile.Request) 
 			}
 		}
 	}
+	c.writer.Flush()
 	return reconcile.Result{}, nil
 }
 
@@ -178,6 +213,7 @@ func (c *nodeClaimWatcher) Reconcile(ctx context.Context, request reconcile.Requ
 			}
 		}
 	}
+	c.writer.Flush()
 	return reconcile.Result{}, nil
 }
 

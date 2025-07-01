@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: karpenter-unhealthy-node-tracker
+  namespace: karpenter
+  labels:
+    app: karpenter-unhealthy-node-tracker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: karpenter-unhealthy-node-tracker
+  template:
+    metadata:
+      labels:
+        app: karpenter-unhealthy-node-tracker
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: karpenter.sh/nodepool
+                operator: DoesNotExist
+      serviceAccountName: karpenter-unhealthy-node-tracker
+      containers:
+      - name: karpenter-unhealthy-node-tracker
+        image: <Add Container Image>
+        args: 
+        - '-o=app/output.csv'
+        resources:
+          requests:
+            cpu: "5"
+            memory: "20Gi"
+          limits:
+            cpu: "5"
+            memory: "20Gi"
+        volumeMounts:
+        - name: data-volume
+          mountPath: /app
+      tolerations:
+      - key: "CriticalAddonsOnly"
+        operator: "Exists"
+        effect: "NoSchedule"
+      - key: dedicated
+        operator: Equal
+        value: karpenter
+      volumes:
+      - name: data-volume
+        emptyDir: {}
+      priorityClassName: system-cluster-critical
