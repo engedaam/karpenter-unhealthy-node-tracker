@@ -70,9 +70,9 @@ func main() {
 			os.Stdout, // Write to standard output
 		)
 	}
-	writer := csv.NewWriter(multiWriter)
 	defer file.Close()
 
+	writer := csv.NewWriter(multiWriter)
 	writer.WriteAll([][]string{{"Event", "Node", "Timestamp"}})
 	unhealthyNodeTime := &sync.Map{}
 	nodeWatcher := &nodeWatcher{kubeClient: mgr.GetClient(), writer: writer, unhealthyNodeTime: unhealthyNodeTime, startDeleteNodeTime: &sync.Map{}, endDeleteNodeTime: &sync.Map{}}
