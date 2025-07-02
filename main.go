@@ -73,8 +73,7 @@ func main() {
 	defer file.Close()
 
 	writer := csv.NewWriter(multiWriter)
-	writer.WriteAll([][]string{{"Event Type", "Node", "Duration (ms)"}})
-
+	writer.WriteAll([][]string{{"Event", "Node", "Timestamp"}})
 	unhealthyNodeTime := &sync.Map{}
 	nodeWatcher := &nodeWatcher{kubeClient: mgr.GetClient(), writer: writer, unhealthyNodeTime: unhealthyNodeTime, startDeleteNodeTime: &sync.Map{}, endDeleteNodeTime: &sync.Map{}}
 	nodeClaimWatcher := &nodeClaimWatcher{kubeClient: mgr.GetClient(), writer: writer, unhealthyNodeTime: unhealthyNodeTime, nodeClaimToNodeName: &sync.Map{}, startDeleteNodeClaimTime: &sync.Map{}, endDeleteNodeClaimTime: &sync.Map{}, instanceTerminatingTime: &sync.Map{}, nodeDrainCompletedTime: &sync.Map{}}
@@ -105,21 +104,21 @@ func (c *nodeWatcher) Reconcile(ctx context.Context, request reconcile.Request) 
 		if errors.IsNotFound(err) {
 			// If we haven't previously seen the node getting deleted, then we use the current time as the startDeleteTime
 			startDeleteTime, loaded := c.startDeleteNodeTime.LoadOrStore(request.NamespacedName.String(), time.Now())
-			unhealthyTime, ok := c.unhealthyNodeTime.Load(request.NamespacedName.String())
 			// If we haven't previously seen the node getting deleted, then we need to log the StartNodeDelete event
-			if ok {
-				if !loaded {
-					c.writer.WriteAll([][]string{{"StartNodeDelete", node.Name, fmt.Sprint((startDeleteTime.(time.Time).Sub(unhealthyTime.(time.Time)) - tolerationDuration).Milliseconds())}})
-				}
-				c.writer.WriteAll([][]string{{"EndNodeDelete", node.Name, fmt.Sprint((time.Since(unhealthyTime.(time.Time)) - tolerationDuration).Milliseconds())}})
+			if !loaded {
+				c.writer.WriteAll([][]string{{"StartNodeDelete", node.Name, startDeleteTime.(time.Time).Format(time.RFC3339)}})
 			}
+			c.writer.WriteAll([][]string{{"EndNodeDelete", node.Name, time.Now().Format(time.RFC3339)}})
 			c.endDeleteNodeTime.Store(request.NamespacedName, time.Now())
 			return reconcile.Result{}, nil
 		}
 		return reconcile.Result{}, err
 	}
 	if cond := GetCondition(node, unhealthyCondition.Type); cond.Status == corev1.ConditionFalse {
-		c.unhealthyNodeTime.LoadOrStore(client.ObjectKeyFromObject(node).String(), cond.LastTransitionTime.Time)
+		unhealthyTime, loaded := c.unhealthyNodeTime.LoadOrStore(client.ObjectKeyFromObject(node).String(), cond.LastTransitionTime.Time)
+		if !loaded {
+			c.writer.WriteAll([][]string{{"NodeUnhealthy", node.Name, unhealthyTime.(time.Time).Format(time.RFC3339)}})
+		}
 	}
 	if !node.DeletionTimestamp.IsZero() {
 		unhealthyTime, ok := c.unhealthyNodeTime.Load(client.ObjectKeyFromObject(node).String())
@@ -127,7 +126,7 @@ func (c *nodeWatcher) Reconcile(ctx context.Context, request reconcile.Request) 
 		if ok {
 			_, loaded := c.startDeleteNodeTime.LoadOrStore(client.ObjectKeyFromObject(node).String(), node.DeletionTimestamp.Time)
 			if !loaded {
-				c.writer.WriteAll([][]string{{"StartNodeDelete", node.Name, fmt.Sprint((node.DeletionTimestamp.Time.Sub(unhealthyTime.(time.Time)) - tolerationDuration).Milliseconds())}})
+				c.writer.WriteAll([][]string{{"StartNodeDelete", node.Name, node.DeletionTimestamp.Time.Format(time.RFC3339)}})
 			}
 		}
 	}

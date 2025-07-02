@@ -1,4 +1,4 @@
-module karpenter-unhealthy-node-tracker
+module github.com/engedaam/karpenter-unhealthy-node-tracker
 
 go 1.24.4
 
